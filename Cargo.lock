@@ -4,22 +4,24 @@ version = 4
 
 [[package]]
 name = "asciimath-parser"
-version = "0.5.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fcf19efa51fb661304ccd34a191df668fddba035f1dfa2d6d924c0cee16fcdb"
+checksum = "08a39f10e59ad84d890912d4d45a80c53931cd90660c8cc3cc8e410ef435beec"
 dependencies = [
  "rustc-hash",
+ "unicode-segmentation",
 ]
 
 [[package]]
 name = "asciimath-unicode"
-version = "0.5.2"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef97cecd78d4065826c087504401b057ec0720688fe477a85749d2725f356a1b"
+checksum = "b8cc699abc85be09bf6105faaaaeca0039c7420c672bfa707ef4a71f5696898c"
 dependencies = [
  "asciimath-parser",
  "emojis",
  "unicode-normalization",
+ "unicode-segmentation",
  "unicode-width",
 ]
 
