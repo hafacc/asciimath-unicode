@@ -10,7 +10,7 @@
         "sync": "svelte-kit sync && bun run --cwd ../extension sync",
         "dev": "bun sync && vite dev",
         "lint": "bun sync && svelte-check --fail-on-warnings && biome check --error-on-warnings",
-        "build": "bun sync && vite build",
+        "export": "bun sync && vite build",
         "preview": "vite preview"
     },
     "devDependencies": {

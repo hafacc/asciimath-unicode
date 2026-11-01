@@ -45,7 +45,7 @@ bun export
 
 Compile a zip for upload to the store
 ```
-bun run pack
+bun pack
 ```
 
 To Do
