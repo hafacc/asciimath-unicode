@@ -18,7 +18,7 @@ keyboard-windows-resource = { path = "../resource" }
 keyboard-core = { path = "../../keyboard-core" }
 
 [target.'cfg(windows)'.dependencies]
-windows-core = "0.62.2"
+windows-core = "0.100.0"
 windows-registry = "0.100.0"
 
 [target.'cfg(windows)'.dependencies.windows]
