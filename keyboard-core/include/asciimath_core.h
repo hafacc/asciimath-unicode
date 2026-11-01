@@ -2,6 +2,7 @@
 #define ASCIIMATH_CORE_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 /* Skin tones, numbered as `AsciimathOptions.skin_tone` takes them. */
@@ -61,6 +62,36 @@ bool asciimath_composer_is_holding(const AsciimathComposer *_Nullable composer);
 AsciimathOutcome asciimath_composer_press_mac(AsciimathComposer *_Nullable composer,
                                               const char *_Nullable characters, uint16_t key_code,
                                               bool is_shortcut, AsciimathOptions options);
+
+/* A name that finishes the one being typed: `name` as it is typed, like "alpha", and `symbol`
+ * what it converts to. */
+typedef struct {
+    char *_Nonnull name;
+    char *_Nonnull symbol;
+} AsciimathCompletion;
+
+/* `count` completions, best first, released together with `asciimath_completions_free`. */
+typedef struct {
+    AsciimathCompletion *_Nullable items;
+    size_t count;
+} AsciimathCompletions;
+
+/*
+ * The names that finish the one being typed at the end of the held math, best first, each symbol
+ * converted with `options`. None when no name is being typed.
+ */
+AsciimathCompletions asciimath_composer_completions(const AsciimathComposer *_Nullable composer,
+                                                    AsciimathOptions options);
+
+void asciimath_completions_free(AsciimathCompletions completions);
+
+/*
+ * Replace the name being typed with `name`, a nul-terminated utf-8 string, as if the rest
+ * of it had been typed, and return what the document should now show. With no name being typed,
+ * nothing changes.
+ */
+AsciimathOutcome asciimath_composer_complete(AsciimathComposer *_Nullable composer,
+                                             const char *_Nullable name, AsciimathOptions options);
 
 /* Stop holding and return the held text as typed, to release with `asciimath_free`. */
 char *_Nonnull asciimath_composer_end_input(AsciimathComposer *_Nullable composer);

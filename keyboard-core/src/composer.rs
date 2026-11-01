@@ -174,6 +174,40 @@ impl Composer {
         committed
     }
 
+    /// The name being typed at the end of the held math, from an emoji name's colon
+    ///
+    /// ```
+    /// use keyboard_core::{Composer, Key};
+    /// let convert = |math: &str, _placeholders: bool| math.to_owned();
+    /// let mut composer = Composer::default();
+    /// composer.press(Key::Text("$$x :sm"), &convert);
+    /// assert_eq!(composer.partial_name(), Some(":sm"));
+    /// ```
+    #[must_use]
+    pub fn partial_name(&self) -> Option<&str> {
+        let math = self.math()?;
+        crate::completion::partial_name_start(math).map(|start| &math[start..])
+    }
+
+    /// Replace the name being typed with `name`, as if the rest of it had been typed
+    ///
+    /// With no name being typed, nothing changes.
+    pub fn complete(&mut self, name: &str, convert: Convert<'_>) -> Outcome {
+        let mut committed = String::new();
+        if let Some(start) = self.math().and_then(crate::completion::partial_name_start) {
+            self.held.truncate(self.delimiter.open().len() + start);
+            for character in name.graphemes(true) {
+                self.type_character(character, &mut committed, convert);
+            }
+        }
+        Outcome::handled(committed, self.marked(convert))
+    }
+
+    /// The held math, when the opening delimiter is whole and no closing one is begun
+    fn math(&self) -> Option<&str> {
+        (!self.is_pending_opener() && self.closer_tail().is_empty()).then(|| self.content())
+    }
+
     fn marked(&self, convert: Convert<'_>) -> String {
         if self.is_pending_opener() {
             self.held.clone()
@@ -552,5 +586,33 @@ mod tests {
         composer.set_delimiter(Delimiter::Backtick);
         assert_eq!(composer.delimiter(), Delimiter::Backtick);
         assert_eq!(press(&mut composer, Key::Text("`")), marked("`‹›"));
+    }
+
+    #[test]
+    fn completing_replaces_the_name_being_typed() {
+        let mut composer = Composer::default();
+        press(&mut composer, Key::Text("$$x :ca"));
+        assert_eq!(composer.partial_name(), Some(":ca"));
+        assert_eq!(
+            composer.complete(":smiley_cat:", &mark),
+            marked("$$‹x :smiley_cat:›")
+        );
+        assert_eq!(composer.partial_name(), None);
+        assert_eq!(
+            composer.complete(":cat:", &mark),
+            marked("$$‹x :smiley_cat:›")
+        );
+    }
+
+    #[test]
+    fn no_name_outside_the_math() {
+        let mut composer = Composer::default();
+        assert_eq!(composer.partial_name(), None);
+        press(&mut composer, Key::Text("$"));
+        assert_eq!(composer.partial_name(), None);
+        press(&mut composer, Key::Text("$:sm$"));
+        assert_eq!(composer.partial_name(), None);
+        press(&mut composer, Key::Backspace);
+        assert_eq!(composer.partial_name(), Some(":sm"));
     }
 }

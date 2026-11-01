@@ -12,6 +12,7 @@ crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 asciimath-unicode = "0.6.0"
+emojis = "0.9"
 unicode-segmentation = "1.13.3"
 
 [dev-dependencies]

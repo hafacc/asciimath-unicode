@@ -76,3 +76,20 @@ private func type(
                 == Typed(document: "x"), "\(delimiter)")
     }
 }
+
+@Test func offersAndPutsInNames() {
+    let composer = Composer()
+    let options = ComposerOptions()
+    #expect(composer.completions(options: options).isEmpty)
+    _ = type("$$x :smi", into: composer)
+    #expect(
+        composer.completions(options: options).first == Completion(name: ":smile:", symbol: "😄"))
+    #expect(
+        composer.complete(name: ":smile:", options: options)
+            == Outcome(marked: "$$x 😄", passThrough: false))
+    #expect(composer.completions(options: options).isEmpty)
+    _ = type(" :han", into: composer)
+    #expect(composer.completions(options: ComposerOptions(skinTone: 5)).first?.symbol == "✋🏿")
+    _ = type(" + alp", into: composer)
+    #expect(composer.completions(options: options).first == Completion(name: "alpha", symbol: "α"))
+}

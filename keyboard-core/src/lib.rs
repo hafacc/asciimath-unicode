@@ -1,7 +1,8 @@
 //! What the keyboards share: converting ascii math and holding what is typed between delimiters
 //!
 //! [`Composer`] takes keys and says what the document should show, and [`convert`] converts as the
-//! extension's binding does when that keeps typed spaces and adds none around operators. The
+//! extension's binding does when that keeps typed spaces and adds none around operators.
+//! [`completions`] lists the names that finish one being typed. The
 //! [`ffi`] module is the same for C, which the mac keyboard's Swift code calls, and [`Settings`]
 //! is what each keyboard stores in its own way.
 #![warn(
@@ -11,12 +12,14 @@
     unsafe_op_in_unsafe_fn
 )]
 
+mod completion;
 mod composer;
 mod delimiter;
 pub mod ffi;
 mod key;
 mod settings;
 
+pub use completion::{Completion, completions};
 pub use composer::{Composer, Convert, Outcome};
 pub use delimiter::Delimiter;
 pub use key::Key;

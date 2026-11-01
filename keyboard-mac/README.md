@@ -4,6 +4,7 @@ Ascii Math Unicode keyboard
 A macOS keyboard (an input source) that converts [ascii math](http://asciimath.org/) to unicode as you type.
 Ordinary typing passes straight through, so it can stay selected all the time.
 After the opening delimiter (`$$` by default) what you type is held, underlined, and shown converted as you go; the closing delimiter or Return replaces it with the result, and Escape leaves it as typed.
+While you type a name, like `alp` or the emoji name `:smi`, Tab opens a list of the names that finish it below the text. It narrows as you keep typing; up and down move through it, Tab again puts in the highlighted name, and Escape closes it.
 
 It converts with the same Rust library as the extension, through the small binding in `../keyboard-core/`.
 
