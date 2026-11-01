@@ -6,6 +6,8 @@
 //! and then `gone`, each as a 64-bit and as a 32-bit program.
 #![cfg(windows)]
 
+use std::time::{Duration, Instant};
+
 use asciimath_unicode_tip::ids::{CLASS_ID, PROFILE_ID};
 use windows::Win32::Foundation::REGDB_E_CLASSNOTREG;
 use windows::Win32::System::Com::{
@@ -56,6 +58,21 @@ fn is_listed() -> bool {
     .any(|[profile]| profile.clsid == CLASS && profile.guidProfile == PROFILE)
 }
 
+/// Whether Windows comes to list the keyboard as `expected` within a few seconds
+fn becomes_listed(expected: bool) -> bool {
+    // Windows can take a moment after the installer exits to update the list
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if is_listed() == expected {
+            return true;
+        } else if Instant::now() >= deadline {
+            return false;
+        } else {
+            std::thread::sleep(Duration::from_millis(200));
+        }
+    }
+}
+
 #[test]
 #[ignore = "only true while the keyboard is installed"]
 fn present() {
@@ -64,7 +81,7 @@ fn present() {
     assert!(service.cast::<ITfTextInputProcessorEx>().is_ok());
     assert!(service.cast::<ITfKeyEventSink>().is_ok());
     assert!(service.cast::<ITfDisplayAttributeProvider>().is_ok());
-    assert!(is_listed());
+    assert!(becomes_listed(true));
 }
 
 #[test]
@@ -73,5 +90,5 @@ fn gone() {
     set_up_com();
     let error = create().expect_err("the class is no longer registered");
     assert_eq!(error.code(), REGDB_E_CLASSNOTREG);
-    assert!(!is_listed());
+    assert!(becomes_listed(false));
 }
