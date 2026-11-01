@@ -10,6 +10,10 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    # these must match the version the windows crate uses, which is still 0.62
+    ignore:
+      - { dependency-name: windows-core, versions: [">= 0.100"] }
+      - { dependency-name: windows-registry, versions: [">= 0.100"] }
   - package-ecosystem: github-actions
     directory: /
     schedule:
