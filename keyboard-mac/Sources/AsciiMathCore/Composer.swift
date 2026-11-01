@@ -17,6 +17,31 @@ public struct Outcome: Equatable, Sendable {
     }
 }
 
+/// A name that finishes the one being typed.
+public struct Completion: Equatable, Sendable {
+    /// The whole name as it is typed, like `alpha` or `:smile:`.
+    public var name: String
+    /// What the name converts to, like α or 😄.
+    public var symbol: String
+
+    /// Creates a completion from its parts.
+    public init(name: String, symbol: String) {
+        self.name = name
+        self.symbol = symbol
+    }
+}
+
+extension Outcome {
+    /// Copies an outcome from the Rust library, leaving its strings for the caller to release.
+    @unsafe fileprivate init(_ outcome: AsciimathOutcome) {
+        unsafe self.init(
+            committed: String(cString: outcome.committed),
+            marked: String(cString: outcome.marked),
+            passThrough: outcome.pass_through
+        )
+    }
+}
+
 /// How math is read and converted.
 public struct ComposerOptions: Equatable, Sendable {
     /// The delimiter that math is typed between, numbered as in `asciimath_core.h`.
@@ -46,6 +71,18 @@ public struct ComposerOptions: Equatable, Sendable {
     }
 }
 
+extension ComposerOptions {
+    fileprivate var forC: AsciimathOptions {
+        AsciimathOptions(
+            delimiter: delimiter,
+            strip_brackets: stripBrackets,
+            vulgar_fracs: vulgarFractions,
+            script_fracs: scriptFractions,
+            skin_tone: skinTone
+        )
+    }
+}
+
 /// Holds what is typed between the math delimiters and converts it.
 ///
 /// This is the Swift face of the composer in the Rust library `keyboard-core`, which keyboards on
@@ -54,7 +91,9 @@ public struct ComposerOptions: Equatable, Sendable {
 /// `Outcome.marked` shows it as the opening delimiter followed by the math converted so far.
 /// Typing the closing delimiter hands over the converted math without its delimiters, and so does
 /// return once there is math. Escape, any other key that isn't text and `endInput()` hand over the
-/// held text exactly as typed, and backspace removes its last character.
+/// held text exactly as typed, and backspace removes its last character. While a name is
+/// typed, `completions(options:)` lists the names that finish it and `complete(name:options:)`
+/// puts one in.
 ///
 /// ```swift
 /// let composer = Composer()
@@ -104,20 +143,35 @@ public struct ComposerOptions: Equatable, Sendable {
         // SAFETY: the handle is live and unshared, the string passed in is nul-terminated and
         // outlives the call, and the outcome's strings are read once and released once
         let outcome = unsafe asciimath_composer_press_mac(
-            handle, characters, keyCode, isShortcut,
-            AsciimathOptions(
-                delimiter: options.delimiter,
-                strip_brackets: options.stripBrackets,
-                vulgar_fracs: options.vulgarFractions,
-                script_fracs: options.scriptFractions,
-                skin_tone: options.skinTone
-            ))
+            handle, characters, keyCode, isShortcut, options.forC)
         defer { unsafe asciimath_outcome_free(outcome) }
-        return unsafe Outcome(
-            committed: String(cString: outcome.committed),
-            marked: String(cString: outcome.marked),
-            passThrough: outcome.pass_through
-        )
+        return unsafe Outcome(outcome)
+    }
+
+    /// The names that finish the one being typed at the end of the held math, best first.
+    ///
+    /// There are none when no name is being typed. Each symbol is converted with `options`.
+    public func completions(options: ComposerOptions) -> [Completion] {
+        // SAFETY: the handle is live and unshared, `count` items are read, and they are released
+        // once
+        let completions = unsafe asciimath_composer_completions(handle, options.forC)
+        defer { unsafe asciimath_completions_free(completions) }
+        return unsafe (0..<completions.count).map { index in
+            let item = unsafe completions.items.unsafelyUnwrapped[index]
+            return unsafe Completion(
+                name: String(cString: item.name), symbol: String(cString: item.symbol))
+        }
+    }
+
+    /// Replaces the name being typed with `name`, as if the rest of it had been typed.
+    ///
+    /// With no name being typed, nothing changes.
+    public func complete(name: String, options: ComposerOptions) -> Outcome {
+        // SAFETY: the handle is live and unshared, the string passed in is nul-terminated and
+        // outlives the call, and the outcome's strings are read once and released once
+        let outcome = unsafe asciimath_composer_complete(handle, name, options.forC)
+        defer { unsafe asciimath_outcome_free(outcome) }
+        return unsafe Outcome(outcome)
     }
 
     /// Stops holding and returns the held text as typed, for when the caret or focus has moved.

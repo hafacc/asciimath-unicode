@@ -1,7 +1,8 @@
 //! The C interface, declared for C in `include/asciimath_core.h`
 
-use crate::{Composer, Delimiter, Key, Outcome, convert};
+use crate::{Completion, Composer, Delimiter, Key, Outcome, completions, convert};
 use std::ffi::{CStr, CString, c_char};
+use std::ptr;
 
 /// How math is read and converted, as `asciimath_core.h` declares it
 #[derive(Debug, Clone, Copy)]
@@ -17,6 +18,19 @@ pub struct AsciimathOptions {
     pub script_fracs: bool,
     /// The skin tone for emoji that take one, where 0 and unknown numbers are none
     pub skin_tone: u8,
+}
+
+impl AsciimathOptions {
+    fn convert(self, math: &str, placeholders: bool) -> String {
+        convert(
+            math,
+            self.strip_brackets,
+            self.vulgar_fracs,
+            self.script_fracs,
+            self.skin_tone,
+            placeholders,
+        )
+    }
 }
 
 /// An [`Outcome`] for C, whose strings are released together with [`asciimath_outcome_free`]
@@ -107,16 +121,7 @@ pub unsafe extern "C" fn asciimath_composer_press_mac(
             composer.set_delimiter(Delimiter::from_number(options.delimiter));
             composer.press(
                 Key::from_mac(characters, key_code, is_shortcut),
-                &|math, placeholders| {
-                    convert(
-                        math,
-                        options.strip_brackets,
-                        options.vulgar_fracs,
-                        options.script_fracs,
-                        options.skin_tone,
-                        placeholders,
-                    )
-                },
+                &|math, placeholders| options.convert(math, placeholders),
             )
         }
         _ => Outcome {
@@ -125,6 +130,131 @@ pub unsafe extern "C" fn asciimath_composer_press_mac(
         },
     };
     outcome.into()
+}
+
+/// A [`Completion`] for C
+#[derive(Debug)]
+#[repr(C)]
+pub struct AsciimathCompletion {
+    /// The whole name as it is typed, like `:smile:`
+    pub name: *mut c_char,
+    /// What the name converts to, like 😄
+    pub symbol: *mut c_char,
+}
+
+/// Completions for C, best first, released together with [`asciimath_completions_free`]
+#[derive(Debug)]
+#[repr(C)]
+pub struct AsciimathCompletions {
+    /// The first of `count` completions, or null when there are none
+    pub items: *mut AsciimathCompletion,
+    /// How many completions `items` holds
+    pub count: usize,
+}
+
+impl From<Vec<Completion>> for AsciimathCompletions {
+    fn from(completions: Vec<Completion>) -> Self {
+        let items: Box<[AsciimathCompletion]> = completions
+            .into_iter()
+            .map(|completion| AsciimathCompletion {
+                name: c_string(completion.name),
+                symbol: c_string(completion.symbol),
+            })
+            .collect();
+        let count = items.len();
+        AsciimathCompletions {
+            items: if count == 0 {
+                ptr::null_mut()
+            } else {
+                Box::into_raw(items).cast()
+            },
+            count,
+        }
+    }
+}
+
+/// The names that finish the one being typed at the end of the held math, best first
+///
+/// This is [`completions`] of [`Composer::partial_name`], converting with `options`. There are
+/// none when no name is being typed or `composer` is null.
+///
+/// # Safety
+///
+/// `composer` must be null or point to a live composer that nothing else is using.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn asciimath_composer_completions(
+    composer: *const Composer,
+    options: AsciimathOptions,
+) -> AsciimathCompletions {
+    // SAFETY: the caller guarantees a non-null `composer` is live and unshared
+    unsafe { composer.as_ref() }
+        .and_then(Composer::partial_name)
+        .map_or_else(Vec::new, |partial| {
+            completions(partial, &|math, placeholders| {
+                options.convert(math, placeholders)
+            })
+        })
+        .into()
+}
+
+/// Release completions from [`asciimath_composer_completions`]
+///
+/// # Safety
+///
+/// `completions` must be ones returned by [`asciimath_composer_completions`] that haven't been
+/// released yet.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn asciimath_completions_free(completions: AsciimathCompletions) {
+    if !completions.items.is_null() {
+        // SAFETY: the caller guarantees `items` and `count` came from a boxed slice that is
+        // unreleased, and so are the strings in it
+        let items = unsafe {
+            Box::from_raw(ptr::slice_from_raw_parts_mut(
+                completions.items,
+                completions.count,
+            ))
+        };
+        for item in items {
+            // SAFETY: as above
+            unsafe {
+                asciimath_free(item.name);
+                asciimath_free(item.symbol);
+            }
+        }
+    }
+}
+
+/// Replace the name being typed with `name` and return what the document should now show
+///
+/// This is [`Composer::complete`], converting with `options`. A null `composer`, or a `name`
+/// that is null or not utf-8, changes nothing and shows nothing new.
+///
+/// # Safety
+///
+/// `composer` must be null or point to a live composer that nothing else is using, and `name`
+/// must be null or point to a nul-terminated string that stays valid for the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn asciimath_composer_complete(
+    composer: *mut Composer,
+    name: *const c_char,
+    options: AsciimathOptions,
+) -> AsciimathOutcome {
+    // SAFETY: the caller guarantees a non-null `composer` is live and unshared
+    let composer = unsafe { composer.as_mut() };
+    let name = if name.is_null() {
+        None
+    } else {
+        // SAFETY: the caller guarantees a non-null `name` is a valid nul-terminated string
+        unsafe { CStr::from_ptr(name) }.to_str().ok()
+    };
+    match (composer, name) {
+        (Some(composer), Some(name)) => composer
+            .complete(name, &|math, placeholders| {
+                options.convert(math, placeholders)
+            })
+            .into(),
+        _ => Outcome::default().into(),
+    }
 }
 
 /// Stop holding and return the held text as typed, to release with [`asciimath_free`]
@@ -169,7 +299,8 @@ pub unsafe extern "C" fn asciimath_free(text: *mut c_char) {
 #[cfg(test)]
 mod tests {
     use super::{
-        AsciimathOptions, asciimath_composer_end_input, asciimath_composer_free,
+        AsciimathOptions, asciimath_completions_free, asciimath_composer_complete,
+        asciimath_composer_completions, asciimath_composer_end_input, asciimath_composer_free,
         asciimath_composer_is_holding, asciimath_composer_new, asciimath_composer_press_mac,
         asciimath_free, asciimath_outcome_free,
     };
@@ -290,6 +421,55 @@ mod tests {
             asciimath_composer_free(composer);
             asciimath_composer_free(ptr::null_mut());
             asciimath_free(ptr::null_mut());
+        }
+    }
+
+    /// The names and symbols of the completions offered now
+    fn offered(composer: *const Composer, options: AsciimathOptions) -> Vec<(String, String)> {
+        // SAFETY: `composer` is live and unshared, `count` items are read, and they are released
+        // once
+        unsafe {
+            let completions = asciimath_composer_completions(composer, options);
+            let offered = (0..completions.count)
+                .map(|index| {
+                    let item = &*completions.items.add(index);
+                    (
+                        CStr::from_ptr(item.name).to_str().unwrap().to_owned(),
+                        CStr::from_ptr(item.symbol).to_str().unwrap().to_owned(),
+                    )
+                })
+                .collect();
+            asciimath_completions_free(completions);
+            offered
+        }
+    }
+
+    #[test]
+    fn completes_through_c() {
+        let composer = asciimath_composer_new();
+        assert_eq!(offered(composer, OPTIONS), Vec::new());
+        type_text(composer, "$$:han", OPTIONS);
+        assert_eq!(
+            offered(
+                composer,
+                AsciimathOptions {
+                    skin_tone: 5,
+                    ..OPTIONS
+                }
+            )[0],
+            (":hand:".to_owned(), "✋🏿".to_owned())
+        );
+        // SAFETY: `composer` is live and unshared, the name is a valid string, and the outcome
+        // and composer are released once
+        unsafe {
+            let outcome = asciimath_composer_complete(composer, c":hand:".as_ptr(), OPTIONS);
+            assert_eq!(CStr::from_ptr(outcome.marked).to_str().unwrap(), "$$✋");
+            asciimath_outcome_free(outcome);
+            let outcome = asciimath_composer_complete(ptr::null_mut(), ptr::null(), OPTIONS);
+            assert_eq!(CStr::from_ptr(outcome.marked).to_str().unwrap(), "");
+            asciimath_outcome_free(outcome);
+            asciimath_completions_free(asciimath_composer_completions(ptr::null(), OPTIONS));
+            asciimath_composer_free(composer);
         }
     }
 }
